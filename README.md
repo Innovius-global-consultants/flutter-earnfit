@@ -1,4 +1,4 @@
-# flutter_earnfit
+# flutter-earnfit
 
 A new Flutter project.
 
