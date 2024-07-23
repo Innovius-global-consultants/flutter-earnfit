@@ -1,7 +1,9 @@
+import 'package:earnfit/commons/location_service.dart';
+import 'package:earnfit/local_storage/auth/auth.dart';
+import 'package:earnfit/services/repository/auth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../../auth/auth.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
@@ -16,6 +18,9 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
     _navigateToNextScreen();
   }
+
+  final LocationService locationService = LocationService();
+
 
   void _navigateToNextScreen() {
     // Simulate some initialization process
@@ -61,6 +66,7 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _requestPermissions() async {
     var status = await Permission.location.request();
     if (status.isGranted) {
+      await locationService.getCurrentLocation();
       // Permission granted, navigate to dashboard
       context.go('/dashboard');
     } else {

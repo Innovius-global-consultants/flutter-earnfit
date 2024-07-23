@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:earnfit/commons/location_service.dart';
+import 'package:earnfit/local_storage/auth/auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import '../auth/auth.dart';
 
 enum DioMethod { post, get, put, delete }
 
@@ -12,11 +12,9 @@ class APIService {
 
   static final APIService instance = APIService._singleton();
   final FlutterSecureStorage secureStorage = const FlutterSecureStorage();
+  final LocationService locationService = LocationService();
 
   String get baseUrl {
-    if (kDebugMode) {
-      return 'https://api.innoviusconsultants.com/api';
-    }
     return 'https://api.innoviusconsultants.com/api';
   }
 
@@ -25,6 +23,10 @@ class APIService {
     if (token != null) {
       setToken(token);
     }
+  }
+
+  Future<String?> getCurrentLocation() async {
+    return await secureStorage.read(key: 'current_location');
   }
 
   void setToken(String token) {
@@ -43,25 +45,38 @@ class APIService {
         formData,
       }) async {
     try {
-
-
-      print('getToken  request');
-      print(getToken());
+      final token = await getToken();
       final dio = Dio(
         BaseOptions(
           baseUrl: baseUrl,
           contentType: 'application/json',
           headers: {
-            HttpHeaders.authorizationHeader: 'Bearer ${await getToken()}',
+            HttpHeaders.authorizationHeader: token != null ? 'Bearer $token' : '',
           },
         ),
       );
 
       final options = Options(
         headers: {
-          HttpHeaders.authorizationHeader: 'Bearer ${await getToken()}',
+          HttpHeaders.authorizationHeader: token != null ? 'Bearer $token' : '',
         },
       );
+
+      if (endpoint != '/register' || endpoint != '/login') {
+        print('notloginAPi');
+
+        final currentLocation = await getCurrentLocation();
+
+        print('currentLocation');
+        print(currentLocation);
+
+        if (currentLocation != null) {
+          options.headers!.addAll({
+            'Longitude': currentLocation.split(',')[0],
+            'Latitude': currentLocation.split(',')[1],
+          });
+        }
+      }
 
       switch (method) {
         case DioMethod.post:
@@ -75,7 +90,7 @@ class APIService {
         default:
           return dio.post(endpoint, data: param ?? formData, options: options);
       }
-    } on DioError catch (e) {
+    } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
         // Handle token refresh or logout scenario here
         // For simplicity, we'll throw an error for now
@@ -84,8 +99,6 @@ class APIService {
         throw Exception('Network error: ${e.message}');
       }
     } catch (e) {
-      print('Exceptionsdf');
-      print(e);
       throw Exception('Error: $e');
     }
   }

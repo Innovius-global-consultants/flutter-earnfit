@@ -42,7 +42,7 @@ class HomeRepository {
   }
 
   Future<int> _fetchUserIdFromStorage() async {
-    final userId = await secureStorage.read(key: 'user_id');
+    final userId = await secureStorage.read(key: 'id');
     if (userId != null) {
       return int.parse(userId);
     } else {

@@ -19,6 +19,9 @@ class LoginBloc extends Bloc<LoginEvent, LoginState> {
       // Check if the token is available in the API service
       final token = AuthRepository().apiService.getToken(); // Replace with your actual method to get the token
       if (token != null) {
+
+        await authRepository.getConfigData();
+
         // Navigate to the dashboard or perform other actions
         emit(LoginSuccess());
       } else {

@@ -1,74 +1,147 @@
-import 'package:bloc/bloc.dart';
-import 'package:earnfit/screens/home/home_event.dart';
-import 'package:earnfit/screens/home/home_state.dart';
+import 'package:earnfit/configs/bloc.dart';
+import 'package:earnfit/local_storage/config_storage.dart';
+import 'package:earnfit/services/api_service.dart';
+import 'package:earnfit/services/model/dashboard/step_data.dart';
+import 'package:earnfit/services/model/dashboard/steps_info.dart';
+import 'package:earnfit/utils/app_utils.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../../services/repository/home_repository.dart';
 
-class HomeBloc extends Bloc<HomeEvent, HomeState> {
-  final HomeRepository homeRepository;
+class HomeBloc extends Bloc {
+  final APIService apiService = APIService.instance;
+  final FlutterSecureStorage secureStorage = const FlutterSecureStorage();
 
-  HomeBloc({required this.homeRepository}) : super(HomeInitial()) {
-    on<FetchAdvertisements>(_onFetchAdvertisements);
-    requestPermissions(); // Initiate permission request
+  final stepCountProcessingFuture = BlocFuture<StepData, String>();
+  final fetchStepsInfoFuture = BlocFuture<StepsInfo, String>();
+
+  final stepsInformation = BlocState<StepsInfo?>(null);
+
+  final stepsInRealTime = BlocState<StepData?>(null);
+
+  HomeBloc() {
+    registerStates();
+    requestPermissions();
   }
 
-  Future<void> _onFetchAdvertisements(FetchAdvertisements event, Emitter<HomeState> emit) async {
-    emit(HomeLoading());
+  @override
+  List<BlocState> registerStates() {
+    return [
+      stepsInformation,
+      stepCountProcessingFuture,
+      fetchStepsInfoFuture,
+      stepsInRealTime,
+    ];
+  }
+
+
+  Future<String?> fetchInvitationText() async {
+    final invitationMsgText = await ConfigStorage.getInvitationMsgText();
+    final appStoreLink = await ConfigStorage.getAppStoreLink();
+    final playStoreLink = await ConfigStorage.getPlayStoreLink();
+
+    if (invitationMsgText == null || (AppUtils.isAndroid && playStoreLink == null) || (!AppUtils.isAndroid && appStoreLink == null)) {
+      return null; // or handle the error appropriately
+    }
+
+    final String invitationMessage;
+    if (AppUtils.isAndroid) {
+      invitationMessage = invitationMsgText.replaceAll('{APPLink}', playStoreLink!);
+    } else {
+      invitationMessage = invitationMsgText.replaceAll('{APPLink}', appStoreLink!);
+    }
+
+    return invitationMessage;
+  }
+
+
+
+  Future<void> fetchTodayStepsInfo() async {
+    fetchStepsInfoFuture.addLoading();
 
     try {
-      final stepsInfo = await homeRepository.fetchTodayStepsInfo();
-      final advertisements = stepsInfo.data?.advertisementsInfo;
-
-      if (advertisements != null) {
-        emit(HomeScreenLoaded(advertisements: advertisements, stepsInfo: stepsInfo));
+      final userId = await _fetchUserIdFromStorage();
+      if (userId == null) {
+        fetchStepsInfoFuture.addFailure('User ID is null');
+        return;
       }
 
-    } catch (error) {
-      emit(HomeError(message: error.toString()));
+      final response = await apiService.request(
+        '/get-today-steps-info/$userId',
+        DioMethod.get,
+      );
+
+      if (response.statusCode == 200) {
+        final stepsInfo = StepsInfo.fromJson(response.data);
+        stepsInformation.add(stepsInfo);
+        fetchStepsInfoFuture.addSuccess(stepsInfo);
+        _processStepCount(stepsInfo.data?.totalSteps ?? 0);
+      } else {
+        throw Exception(
+            'Failed to fetch steps info. Status code: ${response.statusCode}');
+      }
+    } catch (e) {
+      fetchStepsInfoFuture
+          .addFailure('Failed to fetch steps info: ${e.toString()}');
+    }
+  }
+
+  Future<int?> _fetchUserIdFromStorage() async {
+    final userId = await secureStorage.read(key: 'id');
+    if (userId != null) {
+      return int.tryParse(userId);
+    } else {
+      throw Exception('User ID not found in storage');
     }
   }
 
   void requestPermissions() async {
-    final statusActivityRecognition = await Permission.activityRecognition.status;
+    final statusActivityRecognition =
+        await Permission.activityRecognition.status;
 
-    if (statusActivityRecognition.isDenied) {
-      final permissions = await Permission.location.request();
-
-      if (permissions.isGranted) {
-        _initPlatformState();
-      } else {
-        emit(HomeInitial());
+    if (statusActivityRecognition.isDenied ||
+        statusActivityRecognition.isPermanentlyDenied) {
+      final permissions = await Permission.activityRecognition.request();
+      if (!permissions.isGranted) {
+        throw Exception('Activity recognition permission not granted');
       }
-    } else {
-      _initPlatformState();
     }
   }
 
-  void _initPlatformState() async {
-    final statusLocation = await Permission.location.status;
-    final statusActivityRecognition = await Permission.activityRecognition.status;
-
-    if (statusLocation.isGranted && statusActivityRecognition.isGranted) {
-      _listenToStepCountStream();
-    } else {
-      emit(HomeInitial());
-    }
-  }
-
-  void _listenToStepCountStream() {
+  void listenToStepCountStream() {
     Stream<StepCount>? _stepCountStream = Pedometer.stepCountStream;
-    _stepCountStream?.listen(onStepCount).onError(onStepCountError);
+    _stepCountStream?.listen(onStepCount).onError((error) {
+      stepCountProcessingFuture.addFailure(error.toString());
+    });
   }
 
   void onStepCount(StepCount event) {
     final steps = event.steps;
-    final distance = steps * 0.78 / 1000; // converting to kilometers
-    final calories = steps * 0.04;
-    emit(HomeData(steps: steps.toInt(), distance: distance, calories: calories));
+    _processStepCount(steps);
   }
 
-  void onStepCountError(error) {
-    emit(HomeData(steps: 0, distance: 0.0, calories: 0.0));
+  Future<void> _processStepCount(int steps) async {
+    try {
+      final caloriesPerStep = await ConfigStorage.getCaloriesPerStep();
+
+      final distance = steps * 0.78 / 1000; // converting to kilometers
+      final calories = steps * num.parse(caloriesPerStep!);
+
+      final stepData = StepData(
+        steps: steps,
+        distance: distance.toString(),
+        calories: calories.toInt(),
+      );
+      stepsInRealTime.add(stepData);
+    } catch (error) {
+      stepCountProcessingFuture.addFailure(error.toString());
+    }
+  }
+
+  @override
+  Future<void> close() async {
+    stepCountProcessingFuture.close();
+    fetchStepsInfoFuture.close();
+    super.close();
   }
 }

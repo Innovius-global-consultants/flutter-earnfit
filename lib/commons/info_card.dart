@@ -22,21 +22,21 @@ class InfoCard extends StatelessWidget {
         children: [
           Image.asset(
             iconAsset,
-            height: 50, // Adjust the height as needed
-            width: 50,
+            height: 30, // Adjust the height as needed
+            width: 30,
             color: Colors.blue,
           ),
           Text(
             value,
             style: AppTextStyles.openSans.copyWith(
-              fontSize: 28,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: Colors.black,
             ),
           ),
           Text(
             title,
-            style: AppTextStyles.openSans.copyWith(fontSize: 16, color: Colors.grey),
+            style: AppTextStyles.openSans.copyWith(fontSize: 12, color: Colors.grey),
           ),
         ],
       ),

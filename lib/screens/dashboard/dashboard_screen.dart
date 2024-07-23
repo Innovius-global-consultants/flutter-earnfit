@@ -2,12 +2,12 @@ import 'package:earnfit/screens/activity/activity_screen.dart';
 import 'package:earnfit/screens/friends/friends_screen.dart';
 import 'package:earnfit/screens/profile/profile_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:getwidget/getwidget.dart'; // Import the getwidget package
 
 import '../../commons/custom_bottom_navigation_bar.dart';
 import '../../configs/app_colors.dart';
 import '../../configs/app_text_styles.dart';
 import '../home/home_screen.dart';
-
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -23,8 +23,7 @@ class DashboardScreenState extends State<DashboardScreen> {
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
-      _updateAppBarTitle(
-          index); // Update the app bar title based on the selected index
+      _updateAppBarTitle(index); // Update the app bar title based on the selected index
     });
   }
 
@@ -63,54 +62,58 @@ class DashboardScreenState extends State<DashboardScreen> {
         title: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _appBarTitle == 'EARNFIT'
-                ? const Icon(Icons.directions_run, color: Colors.blue)
-                : const SizedBox.shrink(),
-            _appBarTitle == 'EARNFIT'
-                ? const SizedBox(width: 8)
-                : const SizedBox.shrink(),
-            // Add some space between the icon and the title
-            Text(_appBarTitle,style:AppTextStyles.openSans.copyWith(
-              color: AppColors.black,
-            ),),
+            if (_appBarTitle == 'EARNFIT')
+              const Icon(Icons.directions_run, color: Colors.blue),
+            if (_appBarTitle == 'EARNFIT')
+              const SizedBox(width: 8), // Add some space between the icon and the title
+            Text(
+              _appBarTitle,
+              style: AppTextStyles.openSans.copyWith(
+                color: AppColors.black,
+              ),
+            ),
           ],
         ),
         actions: <Widget>[
-          _appBarTitle == 'EARNFIT'
-              ? IconButton(
-            icon: SizedBox(
-              width: 24, // Adjust the width as needed
-              height: 24, // Adjust the height as needed
-              child: Image.asset(
-                'assets/icons/wallet.png',
-                color: AppColors.buttonColor,
-                // Optionally, set other properties of the Image.asset widget
-              ),
+          if (_appBarTitle == 'EARNFIT')
+            Stack(
+              children: [
+                IconButton(
+                  icon: SizedBox(
+                    width: 24, // Adjust the width as needed
+                    height: 24, // Adjust the height as needed
+                    child: Image.asset(
+                      'assets/icons/wallet.png',
+                      color: AppColors.buttonColor,
+                      // Optionally, set other properties of the Image.asset widget
+                    ),
+                  ),
+                  onPressed: () {
+                    // Add functionality here
+                  },
+                ),
+                Positioned(
+                  right: 5,
+                  top: 5,
+                  child: GFBadge(
+                    color: AppColors.buttonColor, // Set badge color
+                    shape: GFBadgeShape.circle,
+                    child: Text(
+                      '5', // Set the badge number
+                      style: TextStyle(
+                        color: Colors.white, // Set text color
+                        fontSize: 12, // Set text size
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            onPressed: () {
-              // Add functionality here
-            },
-          )
-              : const SizedBox.shrink(),
         ],
       ),
       body: Stack(
         children: [
           _pages[_selectedIndex],
-          if (_selectedIndex ==
-              0) // Show the waves image only for Home and Activity screens
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: SizedBox(
-                width: double.infinity,
-                child: Image.asset(
-                  'assets/icons/waves.png',
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
         ],
       ),
       bottomNavigationBar: CustomBottomNavigationBar(
