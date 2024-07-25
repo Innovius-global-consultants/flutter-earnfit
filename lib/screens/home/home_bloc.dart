@@ -16,7 +16,6 @@ class HomeBloc extends Bloc {
   final fetchStepsInfoFuture = BlocFuture<StepsInfo, String>();
 
   final stepsInformation = BlocState<StepsInfo?>(null);
-
   final stepsInRealTime = BlocState<StepData?>(null);
 
   HomeBloc() {
@@ -34,27 +33,28 @@ class HomeBloc extends Bloc {
     ];
   }
 
-
   Future<String?> fetchInvitationText() async {
     final invitationMsgText = await ConfigStorage.getInvitationMsgText();
     final appStoreLink = await ConfigStorage.getAppStoreLink();
     final playStoreLink = await ConfigStorage.getPlayStoreLink();
 
-    if (invitationMsgText == null || (AppUtils.isAndroid && playStoreLink == null) || (!AppUtils.isAndroid && appStoreLink == null)) {
-      return null; // or handle the error appropriately
+    if (invitationMsgText == null ||
+        (AppUtils.isAndroid && playStoreLink == null) ||
+        (!AppUtils.isAndroid && appStoreLink == null)) {
+      return null;
     }
 
     final String invitationMessage;
     if (AppUtils.isAndroid) {
-      invitationMessage = invitationMsgText.replaceAll('{APPLink}', playStoreLink!);
+      invitationMessage =
+          invitationMsgText.replaceAll('{APPLink}', playStoreLink!);
     } else {
-      invitationMessage = invitationMsgText.replaceAll('{APPLink}', appStoreLink!);
+      invitationMessage =
+          invitationMsgText.replaceAll('{APPLink}', appStoreLink!);
     }
 
     return invitationMessage;
   }
-
-
 
   Future<void> fetchTodayStepsInfo() async {
     fetchStepsInfoFuture.addLoading();
@@ -72,10 +72,15 @@ class HomeBloc extends Bloc {
       );
 
       if (response.statusCode == 200) {
-        final stepsInfo = StepsInfo.fromJson(response.data);
-        stepsInformation.add(stepsInfo);
-        fetchStepsInfoFuture.addSuccess(stepsInfo);
-        _processStepCount(stepsInfo.data?.totalSteps ?? 0);
+        try {
+          final stepsInfo = StepsInfo.fromJson(response.data);
+          stepsInformation.add(stepsInfo);
+          fetchStepsInfoFuture.addSuccess(stepsInfo);
+          await _processStepCount(stepsInfo.data?.totalSteps ?? 0);
+          _scheduleDailyReset();
+        } catch (e) {
+          print(e);
+        }
       } else {
         throw Exception(
             'Failed to fetch steps info. Status code: ${response.statusCode}');
@@ -117,24 +122,95 @@ class HomeBloc extends Bloc {
 
   void onStepCount(StepCount event) {
     final steps = event.steps;
+    print('stepssadsa');
+    print(steps);
     _processStepCount(steps);
   }
 
   Future<void> _processStepCount(int steps) async {
     try {
+      final initialStepCount = await _getInitialStepCount();
+      final adjustedSteps = steps - initialStepCount;
       final caloriesPerStep = await ConfigStorage.getCaloriesPerStep();
-
-      final distance = steps * 0.78 / 1000; // converting to kilometers
-      final calories = steps * num.parse(caloriesPerStep!);
-
+      final distance = adjustedSteps * 0.78 / 1000; // converting to kilometers
+      final calories =
+          adjustedSteps * num.parse(caloriesPerStep ?? 0.04.toString());
       final stepData = StepData(
-        steps: steps,
+        steps: adjustedSteps,
         distance: distance.toString(),
         calories: calories.toInt(),
       );
       stepsInRealTime.add(stepData);
     } catch (error) {
       stepCountProcessingFuture.addFailure(error.toString());
+    }
+  }
+
+  Future<int> _getInitialStepCount() async {
+    final initialStepCount =
+        await secureStorage.read(key: 'initial_step_count');
+    return initialStepCount != null ? int.parse(initialStepCount) : 0;
+  }
+
+  Future<void> _setInitialStepCount(int steps) async {
+    await secureStorage.write(
+        key: 'initial_step_count', value: steps.toString());
+  }
+
+  Future<void> _resetStepCount() async {
+    final stepCount = await Pedometer.stepCountStream.first;
+    await _setInitialStepCount(stepCount.steps);
+  }
+
+  void _scheduleDailyReset() async {
+    final lastResetTimeString =
+        await secureStorage.read(key: 'last_reset_time');
+    final currentTime = DateTime.now().millisecondsSinceEpoch;
+    if (lastResetTimeString == null) {
+      // First-time setup, initialize last reset time
+      await secureStorage.write(
+          key: 'last_reset_time', value: currentTime.toString());
+    } else {
+      final lastResetTime = int.parse(lastResetTimeString);
+      if (DateTime.now()
+              .difference(DateTime.fromMillisecondsSinceEpoch(lastResetTime))
+              .inDays >=
+          1) {
+        await _saveStepData();
+        await _resetStepCount();
+        await secureStorage.write(
+            key: 'last_reset_time', value: currentTime.toString());
+      }
+    }
+  }
+
+  Future<void> _saveStepData() async {
+    try {
+      final steps = stepsInRealTime.state?.steps;
+      final sponsorId =
+          stepsInformation.state?.data?.advertisementsInfo?[0].sponsorId;
+      if (sponsorId != null) {
+        final body = {
+          "step_count": steps,
+          "distance_covered": stepsInRealTime.state?.distance,
+          "sponsor_id": sponsorId
+        };
+
+        final response = await apiService.request(
+          '/save-user-steps',
+          DioMethod.post,
+          param: body,
+        );
+
+        if (response.statusCode == 200) {
+          print('Step data saved successfully');
+        } else {
+          throw Exception(
+              'Failed to save step data. Status code: ${response.statusCode}');
+        }
+      }
+    } catch (e) {
+      print('Error saving step data: ${e.toString()}');
     }
   }
 

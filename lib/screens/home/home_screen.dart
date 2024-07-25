@@ -209,6 +209,13 @@ class _HomeScreenState extends State<HomeScreen> {
             DoubleBlocStateBuilder(
                     _homeBloc.stepsInformation, _homeBloc.stepsInRealTime)
                 .build((_, stepsInformation, stepsInRealTime) {
+
+                  print('backenddddd');
+                  print(stepsInformation?.data?.totalSteps);
+
+                  print('relatimee');
+                  print(stepsInRealTime?.steps );
+
               final stepsBackend = stepsInformation?.data?.totalSteps ?? 0;
               final stepsInRealTimeAdd = stepsInRealTime?.steps ?? 0;
               final totalSteps = stepsBackend + stepsInRealTimeAdd;
@@ -232,7 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
               return _buildInfoCardsForData(
                 steps: totalSteps,
                 distance: totalDistance,
-                calories: totalCalories,
+                calories: totalCalories.toInt(),
               );
             }),
 
